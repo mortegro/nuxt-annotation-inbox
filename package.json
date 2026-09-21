@@ -1,0 +1,19 @@
+{
+  "name": "nuxt-layer-annotation-inbox",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Dev-only annotation toolbar whose notes land in .data/annotations/ with SFC source locations, for coding agents",
+  "main": "./nuxt.config.ts",
+  "files": [
+    "nuxt.config.ts",
+    "modules",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "nuxt": "^4.0.0"
+  },
+  "dependencies": {
+    "agentation-vue": "^0.3.0",
+    "vite-plugin-vue-tracer": "^1.5.0"
+  }
+}
