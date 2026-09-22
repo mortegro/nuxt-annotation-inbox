@@ -2,9 +2,9 @@ import { AGENTATION_STORAGE_KEY, INBOX_ROUTE } from '../contract'
 import type { InboxAnnotation, InboxPayload } from '../contract'
 
 /**
- * Everything the toolbar has to be *told* so its notes reach the repo instead
- * of dying with the tab: where to mirror its store, and what a component chain
- * should say.
+ * Everything the toolbar has to be *told* so its notes reach the working copy
+ * instead of dying with the tab: where to mirror its store, and what a
+ * component chain should say.
  *
  * The library exports three hooks and this file is nothing but their
  * arguments — a storage adapter, a component detector, and its own markdown
@@ -13,16 +13,16 @@ import type { InboxAnnotation, InboxPayload } from '../contract'
  *
  * The package is never named here. It is handed in (`InboxDeps`) by the one
  * file allowed to import it, `mount.ts`, which is what keeps a second importer
- * from appearing (`test/unit/annotation-toolbar.spec.ts`).
+ * from appearing (`test/locks.spec.ts`).
  */
 
 /**
- * The workspace root, substituted as a literal by the inbox's Vite plugin.
- * Absent when something else loads this file, hence the `typeof` guard at the
- * one place it is read: without a root, SFC paths stay absolute rather than
- * the whole detector failing.
+ * The workspace root, substituted as a literal by the inbox's Vite plugin
+ * under the name `__ANNOTATION_INBOX_ROOT__`. Absent when something else loads
+ * this file, hence the `typeof` guard at the one place it is read: without a
+ * root, SFC paths stay absolute rather than the whole detector failing.
  */
-declare const __BOJE_WORKSPACE_ROOT__: string
+declare const __ANNOTATION_INBOX_ROOT__: string
 
 /** One component instance, as much of it as a chain segment needs. */
 interface ChainInstance {
@@ -94,14 +94,14 @@ export function installAnnotationInbox(deps: InboxDeps): void {
 
   deps.setVueDetector((el) => {
     const segments: string[] = []
-    const root = typeof __BOJE_WORKSPACE_ROOT__ === 'string' ? __BOJE_WORKSPACE_ROOT__ : ''
+    const root = typeof __ANNOTATION_INBOX_ROOT__ === 'string' ? __ANNOTATION_INBOX_ROOT__ : ''
 
     let instance = instanceFor(el)
     for (let depth = 0; instance && depth < 20; depth++) {
       const type = instance.type
       // `__file` is absolute in a Vite dev server (`@vitejs/plugin-vue` writes
       // the resolved id) — which is a path no agent can paste, so it is made
-      // repo-relative here rather than at the reading end.
+      // workspace-relative here rather than at the reading end.
       const absolute = type?.__file ?? ''
       const file = root && absolute.startsWith(`${root}/`) ? absolute.slice(root.length + 1) : absolute
       const name = type?.name ?? type?.__name ?? file.split('/').pop()?.replace(/\.vue$/, '') ?? ''
@@ -115,7 +115,7 @@ export function installAnnotationInbox(deps: InboxDeps): void {
     // The last segment is the point of the whole line: not which component the
     // element belongs to, but where in that component's template it is
     // written. `vite-plugin-vue-tracer` recorded it against the same workspace
-    // root, so it is already repo-relative.
+    // root, so it is already workspace-relative.
     const trace = deps.findTraceFromElement(el)?.fullpath
     if (trace) segments.push(trace)
 

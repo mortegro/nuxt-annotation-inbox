@@ -1,0 +1,38 @@
+{
+  // The package's own TypeScript settings, and the reason it has any is the
+  // declaration build. `tsdown`'s dts step resolves the nearest `tsconfig.json`
+  // by walking up from the entry, and without this file that walk reaches the
+  // host project's root config — a Nuxt solution-style file that is `files: []`
+  // plus `references` into `.nuxt/`. A solution config compiles nothing on its
+  // own, so the dts step failed with „Unable to load … you have references in
+  // your tsconfig file“. This one stops the walk and describes the package as
+  // what it is: plain Node-targeted TypeScript with no build of its own beyond
+  // `dist/vite.mjs`.
+  //
+  // After extraction this file is the package's only TypeScript config, which
+  // is why it is written to stand alone rather than to extend the host's.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["vite/client"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    // `vite.ts` imports `./contract.ts` *with* its extension, because
+    // `.storybook/main.ts` pulls that module into a graph whose bundler warns
+    // about extensionless imports. Allowed here rather than worked around
+    // there: with `noEmit`, the extension never reaches an emitted file.
+    "allowImportingTsExtensions": true
+  },
+  // `runtime/plugin.client.ts` is excluded because it imports `#app`, an alias
+  // that exists only inside a prepared Nuxt project. It is typechecked where
+  // it is compiled — by the consuming app's own `nuxt typecheck` — and asking
+  // this config to resolve the alias would mean shipping a shim for a module
+  // the package does not own.
+  "exclude": ["modules/annotation-inbox/runtime/plugin.client.ts"],
+  "include": ["nuxt.config.ts", "tsdown.config.ts", "vitest.config.ts", "modules/**/*.ts", "test/**/*.ts"]
+}

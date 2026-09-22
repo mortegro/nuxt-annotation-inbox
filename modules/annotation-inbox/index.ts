@@ -7,11 +7,12 @@ import { annotationInbox } from './vite'
  *
  * **Why a module rather than a plugin in the layer's `app/plugins/`.** A
  * scanned plugin file is an entry in Nuxt's plugin array even when its body
- * has been eliminated by dead-branch folding, and in this repo that alone
- * moved a chunk hash: the production bundle stopped being byte-identical to
- * one built before the toolbar existed. A module decides *whether the file
- * exists* for the build at all, which is the stronger statement and the one
- * a layer dropped into someone else's project should be making.
+ * has been eliminated by dead-branch folding, and that alone is enough to
+ * move a chunk hash: measured, the production bundle stopped being
+ * byte-identical to one built before the toolbar existed. A module decides
+ * *whether the file exists* for the build at all, which is the stronger
+ * statement and the one a layer dropped into someone else's project should
+ * be making.
  *
  * Two locks, and they fail independently:
  *

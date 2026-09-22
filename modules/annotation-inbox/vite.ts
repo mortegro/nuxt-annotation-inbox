@@ -142,20 +142,20 @@ export function annotationInbox(): Plugin {
   const dir = join(root, INBOX_DIR)
 
   return {
-    name: 'boje:annotation-inbox',
+    name: 'annotation-inbox',
     apply: 'serve',
 
     // Two things the dev server has to be told, both of them about identity:
     //
-    //  - `__BOJE_WORKSPACE_ROOT__`: the client half turns the absolute SFC
-    //    paths in `__file` into repo-relative ones, and only the server knows
-    //    where the repo is. A compile-time substitution, so the browser never
-    //    learns a path it was not already going to print.
+    //  - `__ANNOTATION_INBOX_ROOT__`: the client half turns the absolute SFC
+    //    paths in `__file` into workspace-relative ones, and only the server
+    //    knows where the workspace root is. A compile-time substitution, so
+    //    the browser never learns a path it was not already going to print.
     //  - `optimizeDeps.exclude`: one copy of the toolbar library, not two.
     //    See `TOOLBAR_PACKAGE` in `contract.ts` for what the second copy
     //    silently breaks.
     config: () => ({
-      define: { __BOJE_WORKSPACE_ROOT__: JSON.stringify(root) },
+      define: { __ANNOTATION_INBOX_ROOT__: JSON.stringify(root) },
       optimizeDeps: { exclude: [TOOLBAR_PACKAGE] },
     }),
 

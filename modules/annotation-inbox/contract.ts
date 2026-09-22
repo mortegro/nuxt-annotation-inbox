@@ -9,26 +9,27 @@
  * payload shape is a file with a missing field.
  *
  * Neither this file nor `vite.ts` may name `agentation-vue`. The toolbar's
- * dependency is allowed on exactly one file in the repo
- * (`test/unit/annotation-toolbar.spec.ts`), and the types below are the
- * *inbox's* view of an annotation, not the library's: every field the files on
- * disk carry, and nothing that would make a dev-server module import a
- * PolyForm Shield package.
+ * dependency is allowed on exactly one file in this package,
+ * `runtime/mount.ts`, and the layer's own `test/locks.spec.ts` holds that
+ * rule; the types below are the *inbox's* view of an annotation, not the
+ * library's: every field the files on disk carry, and nothing that would make
+ * a dev-server module import a PolyForm Shield package.
  */
 
 /**
- * Where the toolbar mirrors its session to. Prefixed `__boje` the way Vite
- * prefixes its own internals: this is a dev-server route, not an app route,
- * and the prefix keeps it from ever colliding with a page.
+ * Where the toolbar mirrors its session to. Double-underscore prefixed the
+ * way Vite prefixes its own internals: this is a dev-server route, not an app
+ * route, and the prefix keeps it from ever colliding with a page of the
+ * application the layer is installed into.
  */
-export const INBOX_ROUTE = '/__boje/annotations'
+export const INBOX_ROUTE = '/__annotations'
 
 /**
  * Relative to the workspace root. `.data/` is Nuxt's conventional local-data
- * directory and is already gitignored here, which is the right lifetime: the
- * files mirror a browser session, and a browser session is not history worth
- * committing. To keep annotations beside tickets instead, change this one
- * constant.
+ * directory and is already ignored by Nuxt's own `.gitignore` template, which
+ * is the right lifetime: the files mirror a browser session, and a browser
+ * session is not history worth committing. To keep annotations beside tickets
+ * instead, change this one constant.
  */
 export const INBOX_DIR = '.data/annotations'
 

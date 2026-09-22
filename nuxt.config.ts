@@ -1,3 +1,8 @@
+// `defineNuxtConfig` is imported rather than taken from Nuxt's auto-imports:
+// those only exist inside a project Nuxt has prepared, and this file has to
+// typecheck on its own as part of a published package.
+import { defineNuxtConfig } from 'nuxt/config'
+
 /**
  * The annotation-inbox layer contributes *nothing* to the app's configuration,
  * on purpose.

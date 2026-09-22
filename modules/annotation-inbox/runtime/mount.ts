@@ -38,7 +38,7 @@ import { installAnnotationInbox } from './inbox'
  * That is acceptable for a tool that only ever runs on a developer's machine
  * and would not be for anything shipped, which is why this file is reachable
  * only from a dev server and why the rule is held by a test
- * (`test/unit/annotation-toolbar.spec.ts` in this repo) rather than by habit.
+ * (this layer's `test/locks.spec.ts`) rather than by habit.
  */
 export function mountAnnotationToolbar(): void {
   /*
@@ -126,15 +126,18 @@ export function mountAnnotationToolbar(): void {
    * A shadow root, because the page's CSS must not reach the toolbar and the
    * toolbar must not reach the page.
    *
-   * In this repo the sharp edge is `/editor`, whose body carries a vendored
-   * Tailwind preflight written as `body.boje-editor :is(SEL):not(.study, .study *)`
-   * — specificity (0,2,1) — while the toolbar's own reset uses `:where()`,
-   * specificity (0,0,0). Unshielded, the editor's reset strips the toolbar's
-   * margins, borders and button styling on the one route where it is most
-   * useful. In Storybook the same boundary is what lets a story be judged
-   * unchanged against a capture taken before the toolbar existed. A shadow
-   * root is the only fix that costs the page nothing: no production stylesheet
-   * has to learn that this tool exists.
+   * The sharp edge is the host application's own CSS reset. A vendored
+   * Tailwind preflight, scoped to something like
+   * `body.app :is(SEL):not(.opted-out, …)`, carries a specificity of (0,2,1),
+   * while the toolbar's own reset is written with `:where()` and carries
+   * (0,0,0). Unshielded, the host's reset simply outguns it and strips the
+   * toolbar's margins, borders and button styling — and it does so on
+   * whichever page that reset is most thorough about, which tends to be the
+   * page a developer most wants to annotate. In Storybook the same boundary
+   * is what lets a story be judged unchanged against a capture taken before
+   * the toolbar existed. A shadow root is the only fix that costs the host
+   * page nothing: no production stylesheet has to learn that this tool
+   * exists.
    *
    * `disablePortal` follows from it: the component's default is
    * `<Teleport to="body">`, which would carry it straight back out of the
