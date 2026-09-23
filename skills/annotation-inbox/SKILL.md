@@ -68,7 +68,9 @@ the human believes you read.
 
 Add `nuxt-layer-annotation-inbox` as a devDependency, and add `.data/` to `.gitignore` —
 the notes are as ephemeral as the browser session they were made in and are never
-committed.
+committed. Installing it straight from GitHub
+(`npm i -D github:mortegro/nuxt-annotation-inbox#v0.1.0`) needs npm 11 and must not run
+with `--ignore-scripts`; npm 10 cannot prepare it at all.
 
 For Nuxt, one line in `nuxt.config.ts` and nothing else:
 
@@ -76,9 +78,13 @@ For Nuxt, one line in `nuxt.config.ts` and nothing else:
 extends: ['nuxt-layer-annotation-inbox']
 ```
 
-The layer's module registers the toolbar plugin and the endpoint only when
-`nuxt.options.dev` is true, so there is no flag to set and no condition to write: outside a
-dev server the layer contributes nothing to the app graph.
+The layer's module registers the toolbar plugin, the routes and a storage mount in every
+environment except a `@nuxt/test-utils` run, so there is no flag to set. In a dev server
+everyone may annotate. In a deployed build nobody may until the host says so: an agent
+sends `Authorization: Bearer $NUXT_ANNOTATION_INBOX_TOKEN`, and a human's session is judged
+by the host's `annotation-inbox:authorize` Nitro hook. The README's *Deploying it* section
+is the recipe; a deployment with neither configured serves a page with no toolbar and an
+inbox that refuses you.
 
 Storybook is standalone Vite and is not covered by the Nuxt module, so it is wired by hand.
 In `.storybook/main.ts`, inside `viteFinal`:
@@ -107,17 +113,23 @@ Use `setup()` rather than a decorator. It is the one hook only Storybook's own r
 reaches, so a Vitest run that imports the preview registers the toolbar without ever
 mounting it.
 
-**Done when** both checks have been observed rather than assumed:
+**Done when** all three checks have been observed rather than assumed:
 
-- The dev server logs `annotation inbox: /__annotations → .data/annotations/` on start, and
-  `curl -s localhost:<port>/__annotations` answers with a listing.
+- `curl -s localhost:<port>/__annotations` answers with a listing, and
+  `curl -s localhost:<port>/__annotations/access` with `{"allowed":true}`. HTML instead of
+  JSON means the route is not registered — check the `extends` line. Storybook prints
+  `annotation inbox: /__annotations → .data/annotations/` on start, because there the
+  endpoint is the Vite plugin's; under Nuxt it is a Nitro route and prints nothing.
 - A note survives the round trip: annotate something, see it `open` in the listing, resolve
-  it, and see it leave the default listing and the toolbar.
+  it, and see it leave the default listing and the toolbar within about ten seconds.
+- On a deployed build, `/__annotations/access` answers `{"allowed":false}` for a reader
+  with no session and the page carries no toolbar, while the agent token still lists.
 
 ## Beyond that
 
-The package README covers what only some projects need: how a browser tab becomes a
-session and why each note is its own storage entry, how a host mounts a database under the
-store instead of the filesystem default, the PolyForm Shield licence of the toolbar library
-and what it permits, and the POST contract the toolbar speaks. Read it when a question is
-about the mechanism rather than about using it.
+The package README covers what only some projects need: *Deploying it* (the agent token,
+the `annotation-inbox:authorize` hook, containers), *Storage* (mounting SQLite under the
+inbox so every note is a row), *An MCP server over the inbox*, how a browser tab becomes a
+session, the POST contract the toolbar speaks, and the PolyForm Shield licence of the
+toolbar library with the locks that keep it from reaching a reader who may not annotate.
+Read it when a question is about the mechanism rather than about using it.

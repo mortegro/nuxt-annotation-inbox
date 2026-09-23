@@ -1,6 +1,6 @@
 {
   "name": "nuxt-layer-annotation-inbox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Dev-only annotation toolbar whose notes land in .data/annotations/ with SFC source locations, for coding agents",
   "license": "MIT",

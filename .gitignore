@@ -1,0 +1,10 @@
+node_modules/
+
+# Built by `prepare` on every install, including npm's git-dependency sandbox.
+dist/
+
+# Annotations are as ephemeral as the browser sessions they were made in.
+.data/
+
+*.log
+.DS_Store
