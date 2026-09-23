@@ -4,6 +4,7 @@
 // itself that Vite's `?inline` query hands back a string instead of a side
 // effect rather than relying on the host's config to have done it.
 
+import { INBOX_ACCESS_ROUTE } from '../contract'
 import { installAnnotationInbox } from './inbox'
 
 /**
@@ -35,31 +36,22 @@ import { installAnnotationInbox } from './inbox'
  * **Licence.** `agentation-vue` is [PolyForm Shield
  * 1.0.0](https://polyformproject.org/licenses/shield/1.0.0/) — not an open
  * source licence: it permits any use except building a competing product.
- * That is acceptable for a tool that only ever runs on a developer's machine
- * and would not be for anything shipped, which is why this file is reachable
- * only from a dev server and why the rule is held by a test
- * (this layer's `test/locks.spec.ts`) rather than by habit.
+ * The toolbar therefore ships, but never arrives unasked: every import of it
+ * below is dynamic, so it is a chunk of its own, and the chunk is fetched only
+ * after the server has said this reader may annotate. A reader who may not
+ * downloads none of it. The rule is held by a test (this layer's
+ * `test/locks.spec.ts`) rather than by habit.
  */
 export function mountAnnotationToolbar(): void {
   /*
-   * Never in a built preview.
+   * Only where a human is actually looking at the page — and, outside a dev
+   * build, only where the server says this human may annotate.
    *
-   * This is the build-time half of the rule, and the only thing that keeps the
-   * toolbar out of `storybook-static/`: Vite substitutes `import.meta.env.DEV`
-   * with the literal `true` under `storybook dev` and `false` under
-   * `storybook build`, so in a build everything below becomes unreachable and
-   * Rollup drops the four dynamic `import()` calls with their chunks. Under
-   * Nuxt the guard is belt to the module's braces — a production build never
-   * registers the plugin that imports this file at all.
-   *
-   * It has to come first for that to happen. The probes below it are runtime
-   * questions — they decide whether a toolbar *should appear* in an
-   * environment that is already a dev build, a Vitest runner being one — and a
-   * runtime question in front would leave the imports reachable for anything
-   * static analysis can see. That is measurable, not theoretical: before this
-   * guard, `storybook:build` emitted an `assets/agentation-*.js` chunk.
+   * The order matters. The cheap synchronous probes come first so a test
+   * runner or a server render leaves immediately; the network question is
+   * asked last, and only in a build, because on a dev server the answer is
+   * always yes and a request per page load would be noise.
    */
-  if (!import.meta.env.DEV) return
 
   /*
    * Only where a human is actually looking at the page.
@@ -151,9 +143,30 @@ export function mountAnnotationToolbar(): void {
   const mount = document.createElement('div')
 
   void (async () => {
+    /*
+     * The gate. In a build, nothing below is fetched until the server has
+     * answered — and `/access` answers rather than refusing, so an ordinary
+     * reader's page load stays a clean `200` and simply grows no toolbar.
+     * Any failure is a no: an inbox that cannot be reached is an inbox that
+     * cannot take notes anyway.
+     */
+    if (!import.meta.env.DEV) {
+      let allowed = false
+      try {
+        const response = await fetch(INBOX_ACCESS_ROUTE)
+        allowed = response.ok && (await response.json() as { allowed?: boolean }).allowed === true
+      } catch {
+        allowed = false
+      }
+      if (!allowed) {
+        host.remove()
+        return
+      }
+    }
+
     const [
       { createApp },
-      { AgentationVue, setAnnotationStorage, setVueDetector, formatAnnotations },
+      { AgentationVue, setAnnotationStorage, setVueDetector, formatAnnotations, useAnnotations },
       { default: agentationCss },
       { findTraceFromElement },
     ] = await Promise.all([
@@ -167,7 +180,16 @@ export function mountAnnotationToolbar(): void {
 
     // Before the app mounts, so the first annotation is already written with a
     // file-carrying component chain and already reaches the inbox.
-    installAnnotationInbox({ setAnnotationStorage, setVueDetector, formatAnnotations, findTraceFromElement })
+    installAnnotationInbox({
+      setAnnotationStorage,
+      setVueDetector,
+      formatAnnotations,
+      findTraceFromElement,
+      // How a resolved note leaves the tab: the poller in `inbox.ts` calls
+      // this, the library saves, and the save republishes the session without
+      // it — which is also the acknowledgement the server waits for.
+      removeAnnotation: useAnnotations().removeAnnotation,
+    })
 
     const style = document.createElement('style')
     style.textContent = agentationCss

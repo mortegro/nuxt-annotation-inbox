@@ -4,40 +4,35 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * This package exists to put a toolbar in front of a developer, and the whole
- * argument for shipping it as a layer is that nothing it touches survives a
- * production build. That argument is a rule, and a rule nobody can break by
+ * This package puts a toolbar in front of a reviewer, and the toolbar is a
+ * third-party component under a licence that makes *how* it reaches a browser
+ * the thing worth guarding. That is a rule, and a rule nobody can break by
  * accident is a rule a test states.
  *
- * `agentation-vue` is third-party and licensed under PolyForm Shield 1.0.0 —
- * not an open-source licence, and not one a project installing this layer
- * wants to be distributing under. Nothing about the dependency enforces that:
- * `npm` installs it exactly as it installs anything else, and the one thing
- * keeping it out of a consumer's bundle is how this package *references* it. A
- * static `import … from 'agentation-vue'` in the mount, or a second file here
- * that decides the toolbar would be handy somewhere else, reads as one
- * innocuous line in review and shows up afterwards only as a client bundle
- * nobody measures. There is no runtime symptom to notice: the toolbar would
- * simply also be there in production, and a reviewer looking at `/` would have
- * to know it should not be.
+ * `agentation-vue` is PolyForm Shield 1.0.0 — not an open-source licence, and
+ * not one a project installing this layer wants to be distributing under. It
+ * used to be kept out of every build outright. It no longer is: annotating a
+ * deployed preview is the point of this package, so the toolbar ships — but
+ * only ever as a chunk of its own, fetched after the server has said this
+ * reader may annotate. A reader who may not never downloads it.
  *
- * The consuming repo can assert that *its own* sources never name the package
- * — this study does, in `test/unit/annotation-toolbar.spec.ts` — but it cannot
- * assert anything about the shape of the code in here, and after extraction it
- * will not even have the files. So the locks that make the layer safe to
- * install live with the layer, and they are these, each of which fails
- * silently:
+ * That is a weaker guarantee than "absent", and it holds only while the code
+ * keeps a precise shape. A single static `import … from 'agentation-vue'`
+ * collapses it: a top-level import is part of the module graph before any
+ * branch runs, so the library lands in the entry chunk and every reader
+ * downloads it whatever the gate answers. There is no runtime symptom — the
+ * toolbar still appears only for those allowed in, and the only visible trace
+ * is a bigger bundle nobody measures.
+ *
+ * So the locks that make the layer safe to install live with the layer:
  *
  * 1. Exactly one file in the package names the package at all — the shared
- *    mount, which Nuxt reaches through a dev-only plugin and Storybook imports
- *    from its `preview.ts`. Asserted as an equality, not a subset: a second
- *    importer is the failure the rule is about, and an allowlist that outlives
- *    its file is an allowlist that has stopped describing the package.
- * 2. That mount reaches the package only from a branch its bundler can prove
- *    dead outside development, and the Nuxt module registers the mount only
- *    under `nuxt dev` — so under Nuxt the file is not even in the graph whose
- *    branches would have to be folded. See the case below for the causal
- *    chain, and for the ordering property the mount has already lost once.
+ *    mount, which Nuxt reaches through a plugin and Storybook imports from its
+ *    `preview.ts`. Asserted as an equality, not a subset: a second importer is
+ *    the failure the rule is about.
+ * 2. That mount reaches the package only through dynamic `import()`, and the
+ *    access gate stands *before* the first of them — so in a build nothing of
+ *    the library is fetched until the server has answered.
  * 3. The package is *this layer's* dependency. A layer another project
  *    installs has to install what it uses, so the entry lives in this
  *    directory's `package.json`; whether the consuming root manifest stays
@@ -45,7 +40,7 @@ import { describe, expect, it } from 'vitest'
  *
  * Read as text off disk rather than through the bundler: the property being
  * asserted is what the source *says*, and the only way to ask the bundler
- * instead would be to build a consuming app and grep the output — a
+ * instead would be to build a consuming app and inspect its chunks — a
  * several-minute gate for a rule that is three string searches.
  */
 
@@ -55,33 +50,34 @@ const layerRoot = fileURLToPath(new URL('..', import.meta.url))
 const PACKAGE = 'agentation-vue'
 
 /**
- * The one mount, shared by both harnesses. Sharing became safe when the Nuxt
- * side stopped being a scanned `app/plugins/` file: the plugin that imports
- * this is registered by the module below and only under `nuxt dev`, so the
- * shipped plugin graph has no reference to fold away in the first place.
+ * The one mount, shared by both harnesses: Nuxt reaches it through the plugin
+ * the module registers, Storybook imports it from `preview.ts`.
  */
 const MOUNT = 'modules/annotation-inbox/runtime/mount.ts'
 
-/** The Nuxt module — the registration guard is the subject of one clause below. */
+/** The Nuxt module, which owns what the build is told about those chunks. */
 const MODULE = 'modules/annotation-inbox/index.ts'
 
 /** This package's manifest, which owns the dependency. */
 const MANIFEST = 'package.json'
 
 /**
- * The mount, paired with the early return its bundler folds away outside
- * development: Vite substitutes `import.meta.env.DEV` under `storybook build`,
- * and Nuxt substitutes the same literal in a production build it would never
- * reach this file from anyway.
+ * The mount, paired with the gate that has to stand in front of its dynamic
+ * imports: outside a dev build nothing of the library is fetched until
+ * `/__annotations/access` has answered.
  *
- * The guard is matched as the **statement**, not as the literal. The file also
- * names its literal in the prose that explains it, and a search for the bare
+ * Matched as the **statement**, not as the bare name. The file also names the
+ * route and the literal in the prose that explains them, and a search for a
  * name is therefore satisfied by a comment: deleting the real `if` and leaving
- * its paragraph behind kept this case green until the pattern was tightened.
- * Asserted by the shape that actually eliminates code.
+ * its paragraph behind would keep this case green.
  */
 const MOUNTS = [
-  { file: MOUNT, literal: 'import.meta.env.DEV', guard: /if\s*\(\s*!import\.meta\.env\.DEV\s*\)\s*return\b/ },
+  {
+    file: MOUNT,
+    literal: 'import.meta.env.DEV',
+    guard: /if\s*\(\s*!import\.meta\.env\.DEV\s*\)\s*\{/,
+    probe: /fetch\(\s*INBOX_ACCESS_ROUTE\s*\)/,
+  },
 ] as const
 
 /** The allowlist of the first case: the mounts, in the order a scan yields. */
@@ -153,7 +149,7 @@ function source(file: string): string {
   return readFileSync(resolve(layerRoot, file), 'utf8')
 }
 
-describe('the annotation toolbar stays out of what ships', () => {
+describe('the annotation toolbar reaches a browser only through the gate', () => {
   it('is named by exactly the file that mounts it', () => {
     // The failure this catches in both directions: a second file in the
     // package importing the toolbar — a component, a composable that wanted
@@ -172,31 +168,37 @@ describe('the annotation toolbar stays out of what ships', () => {
     ).toEqual([...ALLOWED])
   })
 
-  it('reaches the package only from a build-time dev branch', () => {
-    // The causal chain this protects, link by link. Vite replaces
-    // `import.meta.env.DEV` with `false` outside development — under
-    // `storybook build`, and in a Nuxt production build for anything still in
-    // the graph; Rollup then folds the `if (!false) return` guard and drops
-    // everything after it, *including* the dynamic `import()` calls, so no
-    // `agentation-vue` chunk is emitted at all. That elimination is the only
-    // reason a consumer's `storybook-static/` is free of the toolbar — there
-    // is no plugin filter, no external, no manual exclusion anywhere else.
+  it('fetches the package only after the gate has answered', () => {
+    // The chain this protects, link by link. Every reference to the library is
+    // a dynamic `import()`, so a bundler emits it as its own chunk instead of
+    // folding it into the entry; the gate above those imports means the chunk
+    // is requested only once `/__annotations/access` has said this reader may
+    // annotate. A reader who may not fetches nothing.
     //
-    // A single static `import … from 'agentation-vue'` breaks it silently: a
-    // top-level import is evaluated before any branch and is therefore part of
-    // the module graph whatever the literal was replaced by. The toolbar would
-    // ship, and the only visible symptom would be a bigger bundle.
-    for (const { file, literal, guard } of MOUNTS) {
+    // A single static `import … from 'agentation-vue'` breaks that silently: a
+    // top-level import is evaluated before any branch, so the library lands in
+    // the entry chunk and every reader downloads it no matter what the gate
+    // answers. The toolbar still behaves correctly — the only symptom is a
+    // bundle nobody measures.
+    for (const { file, literal, guard, probe } of MOUNTS) {
       const text = source(file)
       const guardAt = text.search(guard)
 
       expect(
         guardAt,
-        `\`${file}\` no longer opens with \`if (!${literal}) return\`. That literal is what its bundler `
-        + 'replaces with `false` outside development, and the dead-branch elimination that follows is '
-        + 'the only thing keeping the toolbar out of the build. Matched as the statement, not the name: '
-        + 'the file also spells the literal out in the prose that explains it, and a comment is not a '
-        + 'guard.',
+        `\`${file}\` no longer branches on \`!${literal}\`. That literal is what its bundler replaces `
+        + 'outside development, and it is what keeps a dev server from asking permission on every page '
+        + 'load. Matched as the statement, not the name: the file also spells the literal out in the '
+        + 'prose that explains it, and a comment is not a guard.',
+      ).toBeGreaterThanOrEqual(0)
+
+      const probeAt = text.search(probe)
+
+      expect(
+        probeAt,
+        `\`${file}\` no longer asks \`INBOX_ACCESS_ROUTE\` before mounting. That request is the whole `
+        + 'licence argument in a build: without it the toolbar appears for anyone who loads the page, '
+        + `and \`${PACKAGE}\` is PolyForm Shield 1.0.0.`,
       ).toBeGreaterThanOrEqual(0)
 
       const staticImports = [...text.matchAll(/(?:^|\n)\s*(?:import|export)\b[^\n]*?from\s*['"]([^'"]+)['"]/g)]
@@ -206,8 +208,8 @@ describe('the annotation toolbar stays out of what ships', () => {
       expect(
         staticImports,
         `A static import of \`${PACKAGE}\` was added to \`${file}\`. A top-level import is part of the `
-        + `module graph before any branch runs, so the \`${literal}\` guard cannot remove it and the `
-        + 'toolbar ships. Move it into the `await import()` inside the guarded branch.',
+        + 'module graph before any branch runs, so it ships to every reader regardless of the gate. '
+        + 'Move it into the `await import()` after the gate.',
       ).toEqual([])
 
       const dynamic = [...text.matchAll(/import\(\s*['"]([^'"]+)['"]/g)].map(match => match[1]!)
@@ -215,8 +217,8 @@ describe('the annotation toolbar stays out of what ships', () => {
 
       expect(
         mentions.filter(specifier => !dynamic.includes(specifier)),
-        `Every reference to \`${PACKAGE}\` in \`${file}\` has to be a dynamic \`import()\` inside the `
-        + `\`${literal}\` branch — that is the shape Rollup can drop wholesale.`,
+        `Every reference to \`${PACKAGE}\` in \`${file}\` has to be a dynamic \`import()\` — that is `
+        + 'the shape that becomes a chunk of its own rather than part of what every reader downloads.',
       ).toEqual([])
 
       // A scan that matches nothing is a green test that gates nothing, and
@@ -225,54 +227,39 @@ describe('the annotation toolbar stays out of what ships', () => {
       // a string for the shadow root rather than a tag in `<head>`.
       expect(dynamic).toEqual(expect.arrayContaining([PACKAGE, `${PACKAGE}/style.css?inline`]))
 
-      // The one property a reader would not think to check, and the one that
-      // actually failed: the guard has to stand *before* the imports it is
-      // supposed to remove. The mount also asks three runtime questions — is
-      // there a document, is this happy-dom, is this the browser runner — and
-      // with one of those in front instead, the dynamic imports stay reachable
-      // for anything static analysis can see. That is measured, not
-      // theoretical: a `storybook:build` of the study this layer grew up in
-      // emitted an `assets/agentation-*.js` chunk into `storybook-static/` — a
-      // deployable artefact carrying a PolyForm Shield dependency — until the
-      // `import.meta.env.DEV` guard was put first.
-      //
-      // Comparing source positions is the honest way to state that, and it is
-      // exact about the failure it names: an import above the guard is
-      // reachable code, and reachable code is a chunk in the build.
+      // The ordering property, and the one a reader would not think to check.
+      // The gate has to stand *before* the imports it guards: an `await
+      // import()` above it has already fetched the chunk by the time the
+      // server answers, which is exactly the state the gate exists to prevent.
+      // This shape has regressed once before — an earlier version of this file
+      // put a runtime probe in front of the guard and a `storybook:build`
+      // emitted an `assets/agentation-*.js` chunk into `storybook-static/`.
       const firstImportOfPackage = text.search(new RegExp(`import\\(\\s*['"]${PACKAGE}`))
 
       expect(
-        guardAt,
-        `In \`${file}\` a dynamic \`import()\` of \`${PACKAGE}\` comes before the \`${literal}\` guard. `
-        + 'Everything the guard deletes has to sit after it: this is the shape that regressed once '
-        + 'already, and the symptom was an `agentation-*.js` chunk in a build nobody inspects.',
+        probeAt,
+        `In \`${file}\` a dynamic \`import()\` of \`${PACKAGE}\` comes before the access probe. The `
+        + 'chunk would then be fetched for every reader and the gate would decide only whether it is '
+        + 'displayed, which is not the property this package claims.',
       ).toBeLessThan(firstImportOfPackage)
     }
+  })
 
-    // The Nuxt half of the rule, and it is about registration rather than
-    // elimination. The mount is shared with Storybook, which is only safe
-    // because nothing in a consumer's scanned source points at it: the plugin
-    // that does is added by this module, behind a `nuxt.options.dev` check
-    // that stands before the `addPlugin` call. Lose that order — or the check
-    // — and a production build gains a plugin entry importing a PolyForm
-    // Shield package, which is precisely the state a `$production.ignore`
-    // entry used to be needed to work around.
+  it('tells the build not to hint the chunks it gates', () => {
+    // The browser walks around the gate on its own otherwise. Nuxt turns a
+    // plugin's dynamic imports into `<link rel="prefetch">`, and a prefetch is
+    // a download: measured on 2026-09-23, `/` on a production build fetched
+    // both library chunks before `/access` had answered. The `import()` is
+    // still lazy and the toolbar still stays hidden, so nothing about the page
+    // shows the loss - only the network panel does.
     const moduleText = source(MODULE)
-    const devGuardAt = moduleText.search(/if\s*\(\s*!nuxt\.options\.dev\b[^\n]*\)\s*return\b/)
 
     expect(
-      devGuardAt,
-      `\`${MODULE}\` no longer returns early unless \`nuxt.options.dev\`. That guard is what keeps the `
-      + 'toolbar plugin out of a production build entirely — without it the mount is a live reference '
-      + "in the shipped plugin graph, and the mount's own `import.meta.env.DEV` branch is the only "
-      + 'thing left between the build and the dependency.',
-    ).toBeGreaterThanOrEqual(0)
-
-    expect(
-      devGuardAt,
-      `In \`${MODULE}\` the \`addPlugin\` call comes before the \`nuxt.options.dev\` guard, so the `
-      + 'toolbar is registered in every build.',
-    ).toBeLessThan(moduleText.indexOf('addPlugin('))
+      /build:manifest/.test(moduleText) && /prefetch\s*=\s*false/.test(moduleText) && /preload\s*=\s*false/.test(moduleText),
+      `\`${MODULE}\` must clear \`prefetch\` and \`preload\` on the gated chunks in a `
+      + '`build:manifest` hook. Without it Nuxt prefetches the toolbar for every reader and the '
+      + 'gate decides only whether it is displayed, which is not the property this package claims.',
+    ).toBe(true)
   })
 
   it('declares the package as its own dependency', () => {

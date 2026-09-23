@@ -5,11 +5,10 @@ description: Set up the annotation toolbar in a Nuxt or Storybook project, and r
 
 # Annotation inbox
 
-A human clicks an element in the running app, writes a comment, and the dev server writes
-that comment into the working copy together with the file and line of the template that
-draws the element. This skill is both halves of using that: reading the notes, which is
-what you will be doing almost every time, and installing the layer into a project, which
-happens once.
+A human clicks an element in the running app, writes a comment, and the server stores that
+comment together with the file and line of the template that draws the element. You read
+those notes, act, and — this is new — say what you did: every note has a status, and
+leaving it `open` means the human is still waiting.
 
 ## Reading annotations
 
@@ -19,46 +18,51 @@ spacing here is wrong". That sentence has no referent in the repo; the annotatio
 referent.
 
 ```
-cat .data/annotations/*.md
+curl -s 'localhost:<port>/__annotations?format=markdown'
 ```
 
-One file per origin, named `<host>-<port>.md`, so a project running both a Nuxt dev server
-and Storybook has two. A missing file is not an error: it means nobody has annotated that
-origin, because the toolbar deletes the file when the last note goes.
+Port 3000/3040 for the Nuxt dev server, 6011 for Storybook. Default is every open note
+across every tab; `?status=closed` shows what has been answered, `?status=all` everything,
+`?session=<id>` one browser tab. An empty listing is not an error: it means nobody has an
+open note.
 
-Each annotation carries a `**Comment:**`, a `**Path:**` (the CSS selector, which says
-where on screen the thing ended up) and a `**Components:**` line. Read the components line
-first, and read it backwards:
-
-```
-- **Components:** nuxt-root > NuxtLayout > WalkFrame (app/components/layout/WalkFrame.vue) > GuidePicker (app/components/guide/GuidePicker.vue) > app/components/guide/GuidePicker.vue:42:5
-```
-
-The final segment is not a component. It is the annotated element's own
-`file:line:column` in the template that draws it, and it is the line to open before
-anything else. The chain above it is the ancestry, and it matters only when the element is
-rendered from more than one place and you need to know which call site the human was
-looking at.
-
-If a dev server is up, the same records are available over HTTP:
+Each item carries a `**Comment:**`, a `**Target:**` (what the note is about, and the one
+line to open first), a `**Path:**` (the CSS selector, which says where on screen the thing
+ended up) and a `**Components:**` chain. The target is derived for you:
 
 ```
-curl -s localhost:<port>/__annotations
+- **Target:** element `app/components/guide/GuidePicker.vue:42:5`
+- **Target:** route `/guide/atem`
 ```
 
-That answers with every origin's record as JSON, keyed by origin, from whichever dev
-server is running — useful when only one of the two harnesses is up and you want to know
-whether the other left notes behind. `jq 'keys'` on it is the quickest "did anybody
-annotate anything".
+`element` when the tracer knew the source position — open that file and line. `route` when
+it did not, which is what a production build gives: the note is about that page, and the
+`**Path:**` selector plus the comment are what narrow it down. A note never has no target.
 
-If no dev server is running there is nothing on disk, because the files are written by the
-server, not by the browser. Do not guess which element the human meant from the prose
-alone: ask them to press the toolbar's **Copy annotations** button and paste that output,
-which is the same markdown the `.md` file holds.
+Read the components chain backwards when you need the call site: the last segment is the
+element's own `file:line:column`, the chain above it is its ancestry, and that only matters
+when the element is rendered from more than one place.
 
-**Done when** every annotation in the file is mapped to a file and a line, or is
-explicitly reported back as unmappable. An annotation you silently skipped is a note the
-human believes you read.
+## Answering a note
+
+When you have acted on a note, or decided not to, say so. This is not bookkeeping: it is
+what makes the note disappear from the human's toolbar, and `rejected` without a reason
+tells them nothing.
+
+```
+curl -s -X POST localhost:<port>/__annotations/resolve \
+  -H 'content-type: application/json' \
+  -d '{"ids":["<inboxId>"],"status":"implemented","resolution":"Abstand auf 12px"}'
+```
+
+`status` is `implemented` or `rejected`; `resolution` is your sentence to the human and is
+what a refusal is *for* — "widerspricht dem Phone-Frame" is an answer, silence is not. The
+response names which ids were closed and which it never had. Resolving again corrects a
+note you closed too early.
+
+**Done when** every annotation in the listing is either mapped to a file and a line and
+resolved, or resolved as `rejected` with a reason. A note you silently skipped is a note
+the human believes you read.
 
 ## Installing it
 
@@ -83,7 +87,7 @@ In `.storybook/main.ts`, inside `viteFinal`:
 import { VueTracer } from 'vite-plugin-vue-tracer'
 import { annotationInbox } from 'nuxt-layer-annotation-inbox/vite'
 
-plugins: [vue(), VueTracer(), annotationInbox()],
+plugins: [vue(), VueTracer(), annotationInbox({ endpoint: true })],
 ```
 
 `VueTracer` is what supplies the `file:line:column` segment; without it the annotations
@@ -106,13 +110,14 @@ mounting it.
 **Done when** both checks have been observed rather than assumed:
 
 - The dev server logs `annotation inbox: /__annotations → .data/annotations/` on start, and
-  `curl -s localhost:<port>/__annotations` answers with JSON.
-- A production build carries none of it: `grep -rl agentation <output-dir>` after building
-  finds nothing.
+  `curl -s localhost:<port>/__annotations` answers with a listing.
+- A note survives the round trip: annotate something, see it `open` in the listing, resolve
+  it, and see it leave the default listing and the toolbar.
 
 ## Beyond that
 
-The package README covers what only some projects need: why the files mirror one tab per
-origin, the four independent locks that keep the toolbar out of a build, the PolyForm
-Shield licence of the toolbar library and what it permits, and the POST contract the
-toolbar speaks. Read it when a question is about the mechanism rather than about using it.
+The package README covers what only some projects need: how a browser tab becomes a
+session and why each note is its own storage entry, how a host mounts a database under the
+store instead of the filesystem default, the PolyForm Shield licence of the toolbar library
+and what it permits, and the POST contract the toolbar speaks. Read it when a question is
+about the mechanism rather than about using it.

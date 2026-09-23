@@ -48,8 +48,10 @@
     "vite": "^7.0.0 || ^8.0.0",
     "vue": "^3.5.0"
   },
+  "//dependencies": "`unstorage` is the store seam: the server half reads and writes only through it, so a host can mount a filesystem directory, a database or anything else with a driver without this package knowing which.",
   "dependencies": {
     "agentation-vue": "^0.3.0",
+    "unstorage": "^1.17.5",
     "vite-plugin-vue-tracer": "^1.5.0"
   },
   "devDependencies": {

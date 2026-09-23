@@ -1,5 +1,5 @@
-import { AGENTATION_STORAGE_KEY, INBOX_ROUTE } from '../contract'
-import type { InboxAnnotation, InboxPayload } from '../contract'
+import { AGENTATION_STORAGE_KEY, INBOX_POLL_MS, INBOX_ROUTE, INBOX_SESSION_KEY } from '../contract'
+import type { InboxAnnotation, InboxItem, InboxPayload } from '../contract'
 
 /**
  * Everything the toolbar has to be *told* so its notes reach the working copy
@@ -35,9 +35,29 @@ export interface InboxDeps {
   setVueDetector(detector: (el: Element) => string | undefined): void
   formatAnnotations(annotations: InboxAnnotation[], detail: 'standard', pageUrl: string): string
   findTraceFromElement(el?: Element | null): { fullpath: string } | undefined
+  /**
+   * The library's own removal, so a note an agent answered can leave the tab.
+   * Removing triggers the library's save, which republishes the session
+   * without the note — the acknowledgement the server is waiting for.
+   */
+  removeAnnotation(id: string): unknown
 }
 
 export function installAnnotationInbox(deps: InboxDeps): void {
+  /**
+   * This tab's identity, for the life of this tab. `sessionStorage` is exactly
+   * the right lifetime: a reload keeps the id, so a reloaded tab still owns
+   * the notes it published, while a second tab gets its own and the two cannot
+   * overwrite each other — which is what the per-origin file used to do.
+   */
+  const sessionId = (() => {
+    const existing = sessionStorage.getItem(INBOX_SESSION_KEY)
+    if (existing && /^[a-z0-9]{6,32}$/.test(existing)) return existing
+    const fresh = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+    sessionStorage.setItem(INBOX_SESSION_KEY, fresh)
+    return fresh
+  })()
+
   /**
    * One POST per change, carrying the whole session for this origin.
    *
@@ -59,12 +79,13 @@ export function installAnnotationInbox(deps: InboxDeps): void {
     }
 
     const payload: InboxPayload = {
+      sessionId,
       origin: location.origin,
       url: location.href,
       annotations,
-      // The same text the Copy button produces, so the file an agent reads and
-      // the paste a human makes are the same artefact. Not computed for an
-      // empty session: that POST only tells the server to delete the files.
+      // The same text the Copy button produces, so what an agent reads and
+      // what a human pastes are the same artefact. Not computed for an empty
+      // session: that POST only tells the server this tab holds nothing.
       markdown: annotations.length > 0 ? deps.formatAnnotations(annotations, 'standard', location.href) : '',
     }
 
@@ -87,10 +108,44 @@ export function installAnnotationInbox(deps: InboxDeps): void {
 
   // Once on load, before anything is annotated. Two things depend on it: a
   // reloaded tab re-publishes notes the server may have lost to a restart, and
-  // a *fresh* tab publishes its empty session, which deletes the file left by
-  // the session before it. The file therefore mirrors the last active tab on
-  // an origin — one tab per origin is the rule, and the README says so.
+  // a fresh tab publishes its empty session, which clears what that same
+  // session id owned before. Another tab's notes are untouched — they are its
+  // own session's, not this origin's.
   post(sessionStorage.getItem(AGENTATION_STORAGE_KEY) ?? '{}')
+
+  /**
+   * What an agent's answer looks like from the human's side: the note simply
+   * goes away. Both closing statuses count — a rejection is an answer, and its
+   * reason belongs in the listing, not in a marker the human has to dismiss.
+   *
+   * Polling, not a socket: the inbox is a handful of notes and the answer
+   * arrives whenever an agent gets round to it, so a request every ten seconds
+   * on a visible tab with notes in it costs nothing worth a transport. A tab
+   * with no notes asks nothing at all.
+   */
+  async function poll(): Promise<void> {
+    if (document.visibilityState !== 'visible') return
+
+    let mine: InboxAnnotation[] = []
+    try {
+      mine = (JSON.parse(sessionStorage.getItem(AGENTATION_STORAGE_KEY) ?? '{}') as Record<string, InboxAnnotation[]>)[location.origin] ?? []
+    } catch {
+      return
+    }
+    if (mine.length === 0) return
+
+    try {
+      const response = await fetch(`${INBOX_ROUTE}?session=${sessionId}&status=closed`)
+      if (!response.ok) return
+      const { items } = await response.json() as { items: InboxItem[] }
+      for (const item of items) deps.removeAnnotation(item.id)
+    } catch {
+      // The next tick retries. A dev server that has just restarted must not
+      // turn into a console full of failures.
+    }
+  }
+
+  setInterval(() => void poll(), INBOX_POLL_MS)
 
   deps.setVueDetector((el) => {
     const segments: string[] = []

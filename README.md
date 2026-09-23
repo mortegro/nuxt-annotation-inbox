@@ -5,17 +5,24 @@ the line of the SFC that draws the button.
 
 ## What it does
 
-Under `nuxt dev` — and nowhere else — a small toolbar hangs off `<body>`. A human clicks an
-element, writes a comment, and the note is mirrored to the dev server, which writes two
-files per origin:
+Under `nuxt dev` — and, behind an access check, wherever the host allows it — a small
+toolbar hangs off `<body>`. A human clicks an element, writes a comment, and the note is
+mirrored to the server, which keeps every note as its own entry in an
+[unstorage](https://unstorage.unjs.io) store. By default that store is a directory:
 
 ```
-.data/annotations/localhost-3040.json   every field, machine-readable
-.data/annotations/localhost-3040.md     the same text the toolbar's Copy button produces
+.data/annotations/items/<sessionId>-<n>.json   one note, with its target and its status
+.data/annotations/sessions/<sessionId>.json    which notes one browser tab owns
+.data/annotations/markdown/<sessionId>.md      the text the toolbar's Copy button produces
 ```
 
-An agent reads those files. No browser extension, no MCP server, no clipboard step, and
-nothing that only works in Chromium.
+An agent reads them over HTTP — `GET /__annotations?format=markdown` — acts, and answers
+each note with `POST /__annotations/resolve`. No browser extension, no MCP server, no
+clipboard step, and nothing that only works in Chromium.
+
+One entry per note rather than one blob per tab is deliberate: a host that mounts a
+database under the store (see *Storage*) then holds one row per annotation, so "what is
+still open, and what was rejected with what reason" is a query.
 
 Each annotation names the element three ways, and the third is the useful one:
 
@@ -28,11 +35,13 @@ Every component in the chain carries its SFC path relative to the workspace root
 final segment is the annotated element's own position in the template it is written in.
 Open that first.
 
-**One tab per origin.** The files mirror the most recently active tab: each tab publishes
-its whole session on load and on every change, so two tabs on one origin overwrite each
-other, and a fresh tab deletes the files a previous session left behind. That is the
-intended lifetime — the notes are as ephemeral as the session they were made in, which is
-why `.data/` is gitignored.
+**A tab is a session.** Each tab gets an id that lives as long as the tab, and publishes
+its whole session on load and on every change, so two tabs never overwrite each other and
+a tab that clears its notes clears only its own. A resolution is sticky: a note an agent
+closed stays closed when the tab republishes it, and vanishes for good once the tab stops
+sending it. The notes are as ephemeral as the sessions they were made in, which is why
+`.data/` is gitignored — a host that wants them to outlive a container mounts a database
+instead.
 
 ## Install
 
@@ -102,18 +111,35 @@ that compiles it anyway, and shipping it precompiled would put the
 `if (!import.meta.env.DEV) return` guard behind a build boundary where the consumer's
 bundler can no longer fold the branch away.
 
-Storybook is its own origin, so its annotations are their own session and their own file
-(`localhost-6011.*`).
+Storybook is its own origin and its tabs are their own sessions. It has no Nitro, so it is
+the one harness that asks this package's Vite plugin for the endpoint itself:
+`annotationInbox({ endpoint: true })`.
 
-## Reading annotations
+## Reading and answering annotations
 
-- `cat .data/annotations/localhost-3040.md` — the markdown, one `## Feedback` block per
-  session. A missing file means there are no annotations.
-- `curl http://localhost:3040/__annotations` — every origin's record as JSON, keyed
-  by origin, served by whichever dev server is running.
-- `POST` to the same route is what the toolbar itself does; the body is
-  `{ origin, url, annotations, markdown }` (`modules/annotation-inbox/contract.ts`). An
-  empty `annotations` array deletes the origin's files.
+- `curl -s 'localhost:<port>/__annotations?format=markdown'` — every open note, with its
+  id, its target and the request that closes it. `?status=closed|all`, `?session=<id>` to
+  narrow it.
+- `curl -s -X POST localhost:<port>/__annotations/resolve -d '{"ids":["<id>"],"status":"rejected","resolution":"why"}'`
+  — answers which ids were closed and which it never had. Both closing statuses take the
+  note out of the human's toolbar; `rejected` is how an agent says no without going silent.
+- `GET /__annotations/access` answers `{ allowed }` and never refuses: it is how the client
+  decides whether to show a toolbar at all.
+- `POST /__annotations` is what the toolbar itself does; the body is
+  `{ sessionId, origin, url, annotations, markdown }`
+  (`modules/annotation-inbox/contract.ts`). A note the tab stops sending is
+  deleted while it is still open and kept once it has been answered — dropping
+  the marker is how the tab acknowledges the answer, and the answer is what the
+  listing is for. An empty `annotations` array therefore clears a session that
+  holds nothing answered, and nothing else.
+
+## Storage
+
+The server half touches nothing but an unstorage `Storage`, so where annotations live is
+the host's decision, not this package's. The default is a filesystem driver rooted at
+`.data/annotations`. A host that wants them queryable or container-proof mounts something
+else under `INBOX_STORAGE_MOUNT` — a SQLite database through `db0`, for instance, where
+each note is a row and `json_extract(value, '$.status')` answers what is still open.
 
 ## The shipped skill
 
