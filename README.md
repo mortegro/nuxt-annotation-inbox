@@ -49,7 +49,7 @@ instead.
 
 ```bash
 npm i -D nuxt-layer-annotation-inbox            # once it is on a registry
-npm i -D github:mortegro/nuxt-annotation-inbox#v0.1.0   # straight from the tag
+npm i -D github:mortegro/nuxt-annotation-inbox#v0.1.1   # straight from the tag
 ```
 
 ```ts
@@ -79,14 +79,29 @@ its file; they just stop naming the line, and fall back to naming the route the 
 made on. Adding `VueTracer()` to the module's `addVitePlugin` call brings it back (the
 tracer skips already-instrumented files, so a double registration is harmless).
 
-**Copying the directory** into your project's `layers/` still works and is the fallback for
-a project that cannot take the dependency: Nuxt 4 extends every directory under
-`~~/layers/` automatically, so no `extends` line is needed in that mode. Run your package
-manager afterwards so the layer's own dependencies (`agentation-vue`,
-`vite-plugin-vue-tracer`, `unstorage`) are installed — with npm workspaces,
-`"workspaces": ["layers/*"]` in the root manifest is enough. Now that the package is
-published this is the fallback rather than the recommendation, because a copy does not get
-updates.
+**Vendoring it** is the third way, and the one to take when the consuming project will
+also *edit* the package: put this repository into the project as a `git subtree` and list
+that directory as an npm workspace.
+
+```bash
+git remote add annotation-inbox git@github.com:mortegro/nuxt-annotation-inbox.git
+git subtree add -P vendor/nuxt-annotation-inbox annotation-inbox main
+# package.json: "workspaces": ["vendor/nuxt-annotation-inbox"]
+#               devDependencies: "nuxt-layer-annotation-inbox": "*"
+npm install    # links node_modules/nuxt-layer-annotation-inbox and runs `prepare`
+git subtree push -P vendor/nuxt-annotation-inbox annotation-inbox main   # publish back
+```
+
+`vendor/` and not `layers/`: Nuxt extends every directory under `~~/layers/` by itself, so
+a layer that is *also* named in `extends` would be registered twice. The package name is
+unchanged by vendoring, so `extends`, `/vite` and `/mount` stay as they are. Nothing is
+fetched from GitHub at install time any more — a Docker build needs neither `git` nor npm
+11, but it does need the vendored directory copied in before `npm ci`.
+
+**Copying the directory** into `~~/layers/` is the last resort, for a project that can take
+neither a dependency nor a subtree. Nuxt picks it up with no `extends` line; run your
+package manager afterwards so `agentation-vue`, `vite-plugin-vue-tracer` and `unstorage`
+are installed. A copy gets no updates.
 
 ### Check the install
 
