@@ -49,11 +49,19 @@ export function installAnnotationInbox(deps: InboxDeps): void {
    * the right lifetime: a reload keeps the id, so a reloaded tab still owns
    * the notes it published, while a second tab gets its own and the two cannot
    * overwrite each other — which is what the per-origin file used to do.
+   *
+   * `crypto.randomUUID` is secure-context-only: a review deployment reached
+   * over plain `http://` on anything but `localhost` (a Tailscale hostname,
+   * say) sees it as `undefined` and would otherwise throw here before the
+   * toolbar ever mounts. `crypto.getRandomValues` carries no such
+   * restriction, so it is the fallback rather than a second dependency.
    */
   const sessionId = (() => {
     const existing = sessionStorage.getItem(INBOX_SESSION_KEY)
     if (existing && /^[a-z0-9]{6,32}$/.test(existing)) return existing
-    const fresh = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+    const fresh = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+      : Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('')
     sessionStorage.setItem(INBOX_SESSION_KEY, fresh)
     return fresh
   })()
