@@ -1,7 +1,8 @@
 # annotation-inbox
 
 A Nuxt 4 layer that turns "this button sits too low" into a file in your working copy, with
-the line of the SFC that draws the button.
+the line of the SFC that draws the button. Storybook and plain Vite apps without Nuxt or
+Vue take the same toolbar and inbox — see *Storybook* and *A plain Vite app*.
 
 ## What it does
 
@@ -69,8 +70,8 @@ Two things about installing it **from GitHub**, both measured rather than guesse
   (reading 'edgesOut')`, reproducible in an empty directory with this dependency alone.
   `npm i -g npm@11` fixes it; declare the floor in your `engines.npm`.
 - **No `--ignore-scripts`.** The package's `prepare` script is what builds `dist/vite.mjs`,
-  the `./vite` export Storybook loads. Skipping scripts installs a package whose
-  `.storybook/main.ts` import resolves to nothing.
+  the `./vite` export Storybook and plain Vite apps load. Skipping scripts installs a
+  package whose `/vite` import resolves to nothing.
 
 Requirements: Nuxt 4, and DevTools left enabled with their default `componentInspector` —
 that is what registers `vite-plugin-vue-tracer`, and the tracer is what supplies the
@@ -155,6 +156,64 @@ their own chunk.
 Storybook is its own origin and its tabs are their own sessions, but it reads the same
 store as the Nuxt server beside it, so either port lists every note.
 
+## A plain Vite app
+
+An app with neither Nuxt nor Vue — vanilla JS, lit-html, any framework Vite serves — takes
+the toolbar the Storybook way: the Vite plugin answers the route, and the app's own entry
+mounts the toolbar. Measured on
+[`youtube-knowledge`](https://github.com/mortegro/youtube-knowledge) (vanilla JS +
+lit-html + Web Awesome, Vite 8, an Express API behind Vite's proxy), installed from the tag.
+
+```js
+// vite.config.mjs
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import { annotationInbox } from 'nuxt-layer-annotation-inbox/vite'
+
+export default defineConfig({
+  optimizeDeps: { exclude: ['nuxt-layer-annotation-inbox'] },
+  plugins: [
+    annotationInbox({ endpoint: true }),
+    { ...vue(), apply: 'serve' },
+    // …the app's own plugins
+  ],
+})
+```
+
+```js
+// the app's entry, after it has mounted itself
+if (import.meta.env.DEV) {
+  import('nuxt-layer-annotation-inbox/mount').then(({ mountAnnotationToolbar }) => mountAnnotationToolbar())
+}
+```
+
+Each line answers a failure seen on the way:
+
+- **An ESM config.** `./vite` is ESM-only, and Vite loads `vite.config.js` as CommonJS when
+  `package.json` has no `"type": "module"`. Rename the config to `vite.config.mjs`, or set
+  the type if the rest of the project allows it.
+- **`@vitejs/plugin-vue`, serve-only.** The toolbar is a Vue app shipped as `.vue` files, so
+  the dev server must compile SFCs even though the app has none. `apply: 'serve'` keeps the
+  plugin out of the build; add it as a devDependency.
+- **`optimizeDeps.exclude` for this package.** The plugin already excludes the toolbar
+  library; a mount from `node_modules` must be excluded too. Pre-bundled, it bakes its own
+  copy of Vue into the bundle while the toolbar's `.vue` files import the other one, and the
+  toolbar throws `Cannot read properties of null (reading 'ce')` on first render. Vite
+  leaves linked packages un-bundled, so a vendored workspace should not meet this.
+- **A dynamic import behind `import.meta.env.DEV`.** Vite replaces the flag with `false` in
+  a build and drops the branch, so the production bundle names neither the toolbar nor the
+  route: `grep -rlE 'agentation|__annotations' dist/` finds nothing. The access gate is not
+  involved; *Deploying it* does not apply to this shape.
+- **No `VueTracer()`.** It instruments SFC templates, and the app has none. Every note's
+  target is therefore `route`, and the `**Path:**` selector plus the `**Context:**` text are
+  what locate the element — stable class names and `data-*` attributes in the app's markup
+  are what make a path readable.
+
+A dev proxy coexists as long as its rules leave `/__annotations` alone: the plugin's
+middleware answers the route, and `/api` and friends still reach the backend. On start the
+dev server prints `annotation inbox: /__annotations → .data/annotations/`; the checks under
+*Check the install* apply on Vite's port.
+
 ## Deploying it
 
 The inbox exists in a production build too — annotating a deployed preview is the point —
@@ -204,8 +263,10 @@ refusal there would be a failed request on every reader's page load.
   mount a volume over it if the notes should outlive the container.
 - Pass `NUXT_ANNOTATION_INBOX_TOKEN` in; without it no agent can read the inbox from
   outside, which is the safe default but rarely the one you want in a review deployment.
-- If the image installs this package **from GitHub**, the builder stage needs `git` and
-  npm 11, and must not run with `--ignore-scripts` (see *Install*).
+- If the image installs this package **from GitHub**, the builder stage needs npm 11 and
+  must not run with `--ignore-scripts` (see *Install*). It does not need `git` while the
+  repository is public: `npm ci` in `node:24-slim` (npm 11, no `git`) fetched the tag over
+  HTTPS and ran `prepare`.
 
 ### Check the deployment
 

@@ -1,6 +1,6 @@
 ---
 name: annotation-inbox
-description: Set up the annotation toolbar in a Nuxt or Storybook project, and read the annotations a human left by clicking the running app. Use when asked to install or wire the annotation inbox, when the human says they left notes or annotations, or when they describe something they pointed at ("this button", "the spacing here") rather than named.
+description: Set up the annotation toolbar in a Nuxt, Storybook or plain Vite project, and read the annotations a human left by clicking the running app. Use when asked to install or wire the annotation inbox, when the human says they left notes or annotations, or when they describe something they pointed at ("this button", "the spacing here") rather than named.
 ---
 
 # Annotation inbox
@@ -21,7 +21,8 @@ referent.
 curl -s 'localhost:<port>/__annotations?format=markdown'
 ```
 
-Port 3000/3040 for the Nuxt dev server, 6011 for Storybook. Default is every open note
+Port 3000/3040 for the Nuxt dev server, 6011 for Storybook, `server.port` in
+`vite.config.*` for a plain Vite app. Default is every open note
 across every tab; `?status=closed` shows what has been answered, `?status=all` everything,
 `?session=<id>` one browser tab. An empty listing is not an error: it means nobody has an
 open note.
@@ -36,8 +37,10 @@ ended up) and a `**Components:**` chain. The target is derived for you:
 ```
 
 `element` when the tracer knew the source position — open that file and line. `route` when
-it did not, which is what a production build gives: the note is about that page, and the
-`**Path:**` selector plus the comment are what narrow it down. A note never has no target.
+it did not, which is what a production build gives, and every note in an app without Vue
+SFCs: the note is about that page, and the `**Path:**` selector, the `**Context:**` text and
+the comment are what narrow it down — search the source for the path's class names and
+`data-*` attributes. A note never has no target.
 
 Read the components chain backwards when you need the call site: the last segment is the
 element's own `file:line:column`, the chain above it is its ancestry, and that only matters
@@ -69,7 +72,7 @@ the human believes you read.
 Add `nuxt-layer-annotation-inbox` as a devDependency, and add `.data/` to `.gitignore` —
 the notes are as ephemeral as the browser session they were made in and are never
 committed. Installing it straight from GitHub
-(`npm i -D github:mortegro/nuxt-annotation-inbox#v0.1.0`) needs npm 11 and must not run
+(`npm i -D github:mortegro/nuxt-annotation-inbox#v0.1.1`) needs npm 11 and must not run
 with `--ignore-scripts`; npm 10 cannot prepare it at all.
 
 For Nuxt, one line in `nuxt.config.ts` and nothing else:
@@ -113,17 +116,26 @@ Use `setup()` rather than a decorator. It is the one hook only Storybook's own r
 reaches, so a Vitest run that imports the preview registers the toolbar without ever
 mounting it.
 
+A plain Vite app — no Nuxt, no Vue — is wired like Storybook, plus four pieces whose
+absence each breaks something: an ESM `vite.config.mjs`, a serve-only
+`@vitejs/plugin-vue` for the toolbar's own `.vue` files, `optimizeDeps.exclude:
+['nuxt-layer-annotation-inbox']` (else two Vues: `Cannot read properties of null (reading
+'ce')`), and a mount behind `if (import.meta.env.DEV)` in the app's entry so the build
+carries none of it. The README's *A plain Vite app* has the code; copy it from there.
+
 **Done when** all three checks have been observed rather than assumed:
 
 - `curl -s localhost:<port>/__annotations` answers with a listing, and
   `curl -s localhost:<port>/__annotations/access` with `{"allowed":true}`. HTML instead of
-  JSON means the route is not registered — check the `extends` line. Storybook prints
-  `annotation inbox: /__annotations → .data/annotations/` on start, because there the
-  endpoint is the Vite plugin's; under Nuxt it is a Nitro route and prints nothing.
+  JSON means the route is not registered — check the `extends` line. Storybook and a plain
+  Vite app print `annotation inbox: /__annotations → .data/annotations/` on start, because
+  there the endpoint is the Vite plugin's; under Nuxt it is a Nitro route and prints nothing.
 - A note survives the round trip: annotate something, see it `open` in the listing, resolve
   it, and see it leave the default listing and the toolbar within about ten seconds.
 - On a deployed build, `/__annotations/access` answers `{"allowed":false}` for a reader
-  with no session and the page carries no toolbar, while the agent token still lists.
+  with no session and the page carries no toolbar, while the agent token still lists. A
+  plain Vite app has no deployed toolbar at all: `grep -rlE 'agentation|__annotations'
+  dist/` after a build finds nothing.
 
 ## Beyond that
 
